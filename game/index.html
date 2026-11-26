@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Langit Nusantara — Make the best flight game</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #0a1a26;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  #app, #app canvas { display: block; width: 100vw; height: 100vh; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  .panel { position: absolute; background: rgba(4,20,28,0.55);
+    border: 1px solid rgba(142,245,192,0.45); border-radius: 6px;
+    padding: 10px 14px; color: #8ef5c0; }
+  .hud-topleft { top: 16px; left: 16px; }
+  .hud-topright { top: 16px; right: 16px; text-align: right; }
+  .hud-topcenter { top: 16px; left: 50%; transform: translateX(-50%); padding: 6px 10px; }
+  .hud-bottomleft { bottom: 16px; left: 16px; }
+  .hud-bottomright { bottom: 16px; right: 16px; text-align: center; }
+  .hud-label { font-size: 12px; letter-spacing: 2px; color: #8ef5c0; }
+  .hud-big { font-size: 44px; font-weight: 700; line-height: 1.05; color: #eafff3;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+  .hud-unit { font-size: 11px; letter-spacing: 2px; color: rgba(142,245,192,0.75); }
+  .hud-sub { font-size: 14px; color: #cfeede; margin-top: 2px; }
+  .fuelbar { width: 190px; height: 8px; background: rgba(255,255,255,0.15);
+    border-radius: 4px; margin-top: 6px; overflow: hidden; }
+  #hud-fuel-bar { height: 100%; background: #8ef5c0; width: 100%; }
+  .thrbar { width: 26px; height: 110px; background: rgba(255,255,255,0.12);
+    border-radius: 4px; margin: 6px auto 4px; position: relative; overflow: hidden; }
+  #hud-thr-bar { position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
+    background: #ffd76a; }
+  #hud-attitude { bottom: 16px; left: 50%; transform: translateX(-50%);
+    padding: 8px 10px 6px; text-align: center; }
+  #hud-reticle { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+  .ret-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px;
+    border-radius: 50%; border: 2px solid rgba(142,245,192,0.9);
+    box-shadow: 0 0 8px rgba(142,245,192,0.7); }
+  #hud-ringmark { position: absolute; transform: translate(-50%,-50%); display: none;
+    text-align: center; }
+  .ring-diamond { width: 22px; height: 22px; margin: 0 auto;
+    border: 3px solid #ffd76a; transform: rotate(45deg);
+    box-shadow: 0 0 12px rgba(255,215,106,0.8); }
+  .ring-dist { margin-top: 8px; font-size: 13px; font-weight: 700; color: #ffd76a;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.8); }
+  #hud-message { position: absolute; top: 24%; left: 50%; transform: translate(-50%,-50%) scale(0.92);
+    font-size: 54px; font-weight: 800; letter-spacing: 2px; color: #ffffff;
+    text-shadow: 0 2px 22px rgba(0,0,0,0.65); opacity: 0;
+    transition: opacity 0.18s ease, transform 0.18s ease; text-align: center; }
+  #hud-message.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  .msg-sub { font-size: 20px; font-weight: 400; letter-spacing: 1px; color: #8ef5c0;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.7); margin-top: 6px; }
+  .overlay { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; pointer-events: auto;
+    background: linear-gradient(rgba(4,16,26,0.22), rgba(4,16,26,0.62)); }
+  .ov-inner { text-align: center; max-width: 760px; padding: 40px; color: #eaf6ff; }
+  .ov-kicker { letter-spacing: 4px; font-size: 13px; color: #8ef5c0; }
+  .ov-inner h1 { font-size: 76px; line-height: 0.95; margin: 14px 0; letter-spacing: 3px;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.55); }
+  .ov-inner h2 { font-size: 52px; line-height: 1; margin: 14px 0; letter-spacing: 2px;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.55); }
+  .ov-sub { font-size: 18px; color: #ffd76a; }
+  .ov-text { font-size: 17px; line-height: 1.55; color: #d5e8f0; }
+  .ov-controls { font-size: 14px; color: #9fc4d8; margin: 20px 0; line-height: 1.7; }
+  .ov-button { pointer-events: auto; font-size: 20px; font-weight: 700; letter-spacing: 2px;
+    color: #06231a; background: #8ef5c0; border: none; border-radius: 8px;
+    padding: 14px 36px; cursor: pointer; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
+  .ov-button:hover { background: #a8ffce; }
+  .ov-foot { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 20px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud"></div>
+<script src="vendor/three.min.js"></script>
+<script src="src/rng.js"></script>
+<script src="src/sky.js"></script>
+<script src="src/terrain.js"></script>
+<script src="src/aircraft.js"></script>
+<script src="src/flight.js"></script>
+<script src="src/hud.js"></script>
+<script src="src/sound.js"></script>
+<script src="src/game.js"></script>
+</body>
+</html>
