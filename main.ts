@@ -5,7 +5,8 @@
 // dossier is a pure function of the copied files.
 import { buildDossier } from './vendor/makefun-game.ts';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CAPS = {
   text_max_bytes: 163840,
@@ -16,7 +17,10 @@ const CAPS = {
 };
 
 function main(): void {
-  const root = resolve(process.cwd());
+  // Repo root is the directory containing this script, NOT the working
+  // directory: the grader runs `node /bot/main.ts` from elsewhere, so
+  // resolving from the working directory made run_completes fail (R2).
+  const root = dirname(fileURLToPath(import.meta.url));
   const out = resolve(process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
   // Fail loudly (instead of handing in a partial entry) when the game is absent.
   const indexHtml = join(root, 'game', 'index.html');
