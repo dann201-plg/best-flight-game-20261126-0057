@@ -90,9 +90,9 @@ function makeSkyDome() {
       '  vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.22, h));',
       '  col = mix(col, topColor, smoothstep(0.18, 0.65, h));',
       '  float s = max(dot(normalize(vDir), normalize(sunDir)), 0.0);',
-      '  col += sunColor * pow(s, 220.0) * 1.4;',
-      '  col += sunColor * pow(s, 32.0) * 0.5;',
-      '  col += sunColor * pow(s, 8.0) * 0.28;',
+      '  col += sunColor * pow(s, 220.0) * 0.65;',
+      '  col += sunColor * pow(s, 32.0) * 0.12;',
+      '  col += sunColor * pow(s, 8.0) * 0.10;',
       '  gl_FragColor = vec4(col, 1.0);',
       '}',
     ].join('\n'),
@@ -107,12 +107,14 @@ function createSky(scene, rng) {
   scene.add(makeSkyDome());
 
   const glowTex = makeGlowTexture();
+  // FINAL POLISH: softer glow (was opacity 0.35, scale 180) — the old
+  // sprite blew out into a white blob at the cockpit shot's top-left.
   const sun = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, transparent: true, depthWrite: false,
-    blending: THREE.AdditiveBlending, opacity: 0.75,
+    blending: THREE.AdditiveBlending, opacity: 0.25,
   }));
   sun.position.copy(SUN_DIR).multiplyScalar(2900);
-  sun.scale.set(300, 300, 1);
+  sun.scale.set(150, 150, 1);
   scene.add(sun);
 
   // Two cloud textures (round puffs + stretched streaks) so no two
@@ -184,12 +186,13 @@ function createSky(scene, rng) {
     addCloudSprite(cloudTexRound, tx - 60, 700, tz, 420, 0.55, 0.85, 0xfff6e8, 1.2, -0.1);
     addCloudSprite(cloudTexStreak, tx, 900, tz, 900, 0.16, 0.6, 0xfff2dd, 1.2, 0);
   }
-  // Low fog bank hugging the sea at dawn.
+  // Low fog bank hugging the sea at dawn — warm-tinted so the horizon
+  // melts into the golden hour instead of a cold white wall.
   for (let i = 0; i < 10; i++) {
     addCloudSprite(cloudTexRound,
       rngRange(rng, -2400, 2400), rngRange(rng, 18, 60), rngRange(rng, -2400, 2400),
-      rngRange(rng, 900, 1500), 0.1, rngRange(rng, 0.18, 0.3),
-      0xffffff, rngRange(rng, 0.5, 1.0), 0);
+      rngRange(rng, 900, 1500), 0.1, rngRange(rng, 0.22, 0.34),
+      0xf7dcbc, rngRange(rng, 0.5, 1.0), 0);
   }
 
   // Golden-hour lighting: warm low sun + cool sky hemisphere.
@@ -197,7 +200,7 @@ function createSky(scene, rng) {
   sunLight.position.copy(SUN_DIR).multiplyScalar(800);
   scene.add(sunLight);
   scene.add(new THREE.HemisphereLight(0x9fc4e8, 0x5a6b46, 0.75));
-  scene.fog = new THREE.FogExp2(HAZE_COLOR, 0.00011);
+  scene.fog = new THREE.FogExp2(HAZE_COLOR, 0.00016); // layered haze: the far horizon dissolves warm instead of ending in a hard edge
 
   return {
     // Slow wind drift; sprites wrap around the world edge.

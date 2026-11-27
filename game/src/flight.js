@@ -41,6 +41,19 @@ function createFlightModel() {
     timeLeft: LEG_TIME,
     status: 'ready', // ready | flying | landed | crashed | complete | timeout
     message: '',
+    // v2: mission + debrief data. trajectory is sampled while airborne
+    // (one point per 0.2 s, capped); landing/crash hold the touchdown
+    // numbers the debrief grades from — real flight data, never staged.
+    mission: 1,
+    missionName: '',
+    windKt: 0,
+    windDir: 1,
+    trajectory: [],
+    traceTick: 0,
+    landing: null,
+    crash: null,
+    vy: 0,
+    prevY: null,
   };
 }
 
@@ -197,6 +210,18 @@ function updateFlightModel(st, input, dt, world) {
   const fwd = forwardVector(st.heading, st.pitch);
   st.position.addScaledVector(fwd, st.speed * dt);
 
+  // v2: vertical speed + approach trace. vy is the real descent rate at
+  // touchdown (the landing grade reads it); the trace is one sampled
+  // point per 0.2 s of airborne flight, capped so it cannot grow forever.
+  st.vy = st.prevY == null ? 0 : (st.position.y - st.prevY) / dt;
+  st.prevY = st.position.y;
+  if (st.airborne) {
+    st.traceTick++;
+    if (st.traceTick % 12 === 0 && st.trajectory.length < 900) {
+      st.trajectory.push({ x: st.position.x, y: st.position.y, z: st.position.z });
+    }
+  }
+
   // Inverted flight: the wing lifts toward the ground, so the aircraft
   // sinks gently while upside down — a roll costs a few metres, not a
   // crash. (upsideDown = -up.y, with up.y = cos roll * cos pitch.)
@@ -220,7 +245,15 @@ function updateFlightModel(st, input, dt, world) {
     }
     // Runway overrun: past the end still on the ground and fast.
     if (Math.abs(st.position.z) > 520 && Math.abs(st.position.x) < 60) {
-      if (st.speed > 20) { st.status = 'crashed'; return 'OVERRUN'; }
+      if (st.speed > 20) {
+        st.status = 'crashed';
+        st.crash = {
+          sink: Math.max(0, -st.vy), reason: 'overrun', speed: st.speed,
+          offset: Math.abs(st.position.x),
+          bankDeg: Math.abs(wrapPi(st.roll)) * 180 / Math.PI, fuel: st.fuel,
+        };
+        return 'OVERRUN';
+      }
     }
   }
 
@@ -255,6 +288,14 @@ function updateFlightModel(st, input, dt, world) {
       st.position.y = groundY;
       st.status = 'landed';
       st.score += 250 + Math.round(st.timeLeft) * 2;
+      // v2: the touchdown numbers the debrief grades from.
+      st.landing = {
+        sink: Math.max(0, -st.vy),
+        offset: Math.abs(st.position.x),
+        bankDeg: Math.abs(wrapPi(st.roll)) * 180 / Math.PI,
+        speed: st.speed,
+        fuel: st.fuel,
+      };
       return 'LANDED';
     }
     // Anything else touching the ground is a crash — but only when the
@@ -265,6 +306,16 @@ function updateFlightModel(st, input, dt, world) {
     if (st.position.y < groundY
         || (st.position.y <= groundY + 0.4 && vy <= 0.5)) {
       st.status = 'crashed';
+      // v2: tiered crash — a hard landing names the gear, anything else
+      // names the terrain. The debrief shows the reason, not just CRASH.
+      st.crash = {
+        sink: Math.max(0, -st.vy),
+        reason: Math.max(0, -st.vy) > 4.6 ? 'hard' : 'terrain',
+        speed: st.speed,
+        offset: Math.abs(st.position.x),
+        bankDeg: Math.abs(wrapPi(st.roll)) * 180 / Math.PI,
+        fuel: st.fuel,
+      };
       return 'CRASH';
     }
   }
@@ -280,3 +331,18 @@ function headingDegrees(st) {
 // Knots and feet for the HUD (pilots think in knots and feet).
 function knots(st) { return Math.round(st.speed * 1.944); }
 function feet(st) { return Math.round(st.position.y * 3.281); }
+
+// v2: landing grade from the touchdown numbers — pure, so the Node
+// regression harness can check it without a browser. Sink in m/s
+// (1 m/s ≈ 197 FPM), centerline offset in m, bank in degrees.
+// S: sink ≤1.5, offset ≤3, bank ≤5 · A: ≤2.5/6/8 · B: ≤4.0/10/12 · else C.
+function gradeLandingMetrics(m) {
+  if (!m) return { grade: 'C', points: 25 };
+  const s = m.sink || 0;
+  const o = m.offset || 0;
+  const b = m.bankDeg || 0;
+  if (s <= 1.5 && o <= 3 && b <= 5) return { grade: 'S', points: 300 };
+  if (s <= 2.5 && o <= 6 && b <= 8) return { grade: 'A', points: 200 };
+  if (s <= 4.0 && o <= 10 && b <= 12) return { grade: 'B', points: 100 };
+  return { grade: 'C', points: 25 };
+}

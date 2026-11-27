@@ -18,7 +18,15 @@ function riverX(z) {
 // blob shadow all call this one function, so they can never disagree.
 function terrainHeightAt(x, z) {
   const r = Math.sqrt(x * x + z * z);
-  const mask = smoothstep(2950, 2200, r); // island fades into the sea
+  // Indented coastline (REALISM ROUND 2): the island edge is not a
+  // circle — fbm noise pushes the shoreline in/out by up to ~420 m so
+  // the coast reads as bays and headlands from the air. Faded to zero
+  // near the volcano (its NW flank sits on the mask band; a bite out
+  // of the cone would read as a modelling error, not a bay).
+  const dvV = Math.sqrt((x - VOLCANO.x) ** 2 + (z - VOLCANO.z) ** 2);
+  const coastFade = smoothstep(700, 900, dvV);
+  const coast = (fbm2(x * 0.0004 + 11.7, z * 0.0004 - 4.2, WORLD_SEED, 3) - 0.5) * 2 * 420 * coastFade;
+  const mask = smoothstep(2950, 2200, r + coast); // island fades into the sea
   const n = fbm2(x * 0.00045 + 3.7, z * 0.00045 - 1.2, WORLD_SEED, 4);
   let h = (n - 0.5) * 2 * 62 + 16;
 
@@ -46,33 +54,74 @@ function terrainHeightAt(x, z) {
   return Math.max(h, -30);
 }
 
+// Scratch colour reused by biomeColor (called once per vertex at load).
+const _mixC = new THREE.Color();
+
 function biomeColor(x, z, h, out) {
   const p = fbm2(x * 0.0016 + 7.3, z * 0.0016 - 2.1, WORLD_SEED, 3);
   const dv = Math.sqrt((x - VOLCANO.x) ** 2 + (z - VOLCANO.z) ** 2);
   const dt = Math.sqrt((x - TOWN.x) ** 2 + (z - TOWN.z) ** 2);
+  const onCone = dv < VOLCANO.radius * 0.95;
   if (h < 0.6) out.set(0xd8c08d); // sand beach
   else if (h < 3) out.set(0xb9c07a); // beach grass
   else if (dt < TOWN.radius * 0.8) out.set(0xb0a58f); // town ground
-  else if (h > 300) out.set(0xf2f4f6); // snow cap (volcano summit)
-  else if (dv < VOLCANO.radius * 0.75 && h > 120) out.set(0x5c5148); // volcano rock
-  else if (h > 95) out.set(0x8d8172); // high rock
-  else if (p > 0.62) out.set(0x7fb84f); // rice field
+  else if (onCone) {
+    // Volcano slope, graded by height instead of one flat grey: jungle
+    // green at the foot, brown scree, dark rock, grey summit, a dusting
+    // of ash-white only on the very top — a cone you can read as a
+    // mountain, not a pyramid.
+    out.set(0x2f5a26);
+    _mixC.set(0x7a5c38); out.lerp(_mixC, smoothstep(110, 190, h));
+    _mixC.set(0x4a4238); out.lerp(_mixC, smoothstep(200, 290, h));
+    _mixC.set(0x8a7f72); out.lerp(_mixC, smoothstep(310, 360, h));
+    if (h > 365) { _mixC.set(0xd8d2c8); out.lerp(_mixC, smoothstep(365, 385, h)); }
+  } else if (p > 0.62) out.set(0x6fae3e); // rice field
   else if (p > 0.45) out.set(0xc9b968); // dry field
-  else if (p > 0.28) out.set(0x3e6b30); // forest
-  else out.set(0x6fa04b); // grass
+  else if (p > 0.28) out.set(0x2f5a26); // forest
+  else out.set(0x5d8f3e); // grass
+  // Gentle altitude wash off-cone: high ground browns toward rock.
+  if (!onCone && h > 60) {
+    _mixC.set(0x8a7a5c);
+    out.lerp(_mixC, smoothstep(60, 170, h) * 0.7);
+  }
   // Per-vertex brightness jitter so the ground reads as textured, not flat.
   const j = 0.94 + 0.12 * hash2(Math.floor(x / 7), Math.floor(z / 7), WORLD_SEED);
   out.multiplyScalar(j);
   return out;
 }
 
+// Which quadrant of the ground atlas (assets/ground_atlas_2k.jpg) a
+// vertex samples — mirrors biomeColor's decisions so the texture matches
+// the vertex colour: sand on the beach, rock on the high volcano cone,
+// dirt on dry fields and town ground, grass everywhere else.
+// Quadrants in UV space (flipY): grass (0,0), rock (1,0), dirt (0,1),
+// sand (1,1).
+function groundQuad(x, z, h) {
+  const p = fbm2(x * 0.0016 + 7.3, z * 0.0016 - 2.1, WORLD_SEED, 3);
+  const dv = Math.sqrt((x - VOLCANO.x) ** 2 + (z - VOLCANO.z) ** 2);
+  const dt = Math.sqrt((x - TOWN.x) ** 2 + (z - TOWN.z) ** 2);
+  const onCone = dv < VOLCANO.radius * 0.95;
+  if (h < 0.6) return [1, 1]; // sand beach
+  if (onCone && h > 200) return [1, 0]; // volcano rock
+  if (p > 0.45 && p <= 0.62) return [0, 1]; // dry field
+  if (dt < TOWN.radius * 0.8) return [0, 1]; // town ground
+  return [0, 0]; // grass
+}
+
 // The land mesh: displaced heightfield with vertex-colour biomes.
+// REALISM ROUND 2: 220 segments (was 150) so relief reads at range, and
+// per-vertex UVs into the 2x2 biome atlas — each vertex samples its own
+// biome's 1024 px tile at a 30 m tiling, so the ground is rock where the
+// colour says rock and sand where it says sand. The Poly Haven tiles are
+// seamless, so the frac() wrap at each tile edge is invisible.
 function createTerrain(scene) {
-  const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 150, 150);
+  const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 220, 220);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
   const colors = new Float32Array(pos.count * 3);
   const c = new THREE.Color();
+  const TILE = 30;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const z = pos.getZ(i);
@@ -82,6 +131,10 @@ function createTerrain(scene) {
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
     colors[i * 3 + 2] = c.b;
+    const [qx, qy] = groundQuad(x, z, h);
+    const fx = (((x / TILE) % 1) + 1) % 1;
+    const fz = (((z / TILE) % 1) + 1) % 1;
+    uv.setXY(i, qx * 0.5 + fx * 0.5, qy * 0.5 + fz * 0.5);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
@@ -90,14 +143,50 @@ function createTerrain(scene) {
     new THREE.MeshLambertMaterial({ vertexColors: true }),
   );
   scene.add(mesh);
+
+  // Volcano smoke: a thin grey plume rising off the summit and drifting
+  // east, so the cone reads as alive instead of a painted pyramid.
+  // Static sprites (the shot is one frame); the drift is baked into the
+  // rising, widening, fading stack.
+  {
+    const sc = document.createElement('canvas');
+    sc.width = 128; sc.height = 128;
+    const sg = sc.getContext('2d');
+    const sgrad = sg.createRadialGradient(64, 64, 0, 64, 64, 64);
+    sgrad.addColorStop(0, 'rgba(220,214,205,0.85)');
+    sgrad.addColorStop(0.55, 'rgba(210,204,195,0.4)');
+    sgrad.addColorStop(1, 'rgba(210,204,195,0)');
+    sg.fillStyle = sgrad;
+    sg.fillRect(0, 0, 128, 128);
+    const smokeTex = new THREE.CanvasTexture(sc);
+    const summitY = terrainHeightAt(VOLCANO.x, VOLCANO.z);
+    for (let i = 0; i < 8; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: smokeTex, transparent: true, depthWrite: false,
+        opacity: 0.3 - i * 0.025,
+      }));
+      const rise = i * 22;
+      sp.position.set(
+        VOLCANO.x + 20 + i * 26,
+        summitY + 10 + rise,
+        VOLCANO.z - 10 - i * 8,
+      );
+      const size = 90 + i * 26;
+      sp.scale.set(size, size * 0.75, 1);
+      scene.add(sp);
+    }
+  }
   return mesh;
 }
 
 // Procedural normal map for the sea: a seeded wave heightfield turned into
 // normals, so the sun glint breaks into a shimmering path instead of one
-// frozen highlight. The offset drifts slowly in the update loop.
+// frozen highlight. 512 px with finer high-frequency terms (Poly Haven
+// has no water normal texture in its catalogue, checked 2026-11-27) —
+// the 128 px version blurred the glitter into one soft blob at range.
+// The offset drifts slowly in the update loop.
 function makeWaterNormalMap() {
-  const S = 128;
+  const S = 512;
   const c = document.createElement('canvas');
   c.width = S; c.height = S;
   const g = c.getContext('2d');
@@ -108,7 +197,9 @@ function makeWaterNormalMap() {
       const u = x / S * Math.PI * 2;
       const v = y / S * Math.PI * 2;
       hgt[y * S + x] = Math.sin(u * 3 + 1.7) * 0.5 + Math.sin(v * 4 + 0.6) * 0.35
-        + Math.sin((u + v) * 5 + 2.3) * 0.25 + Math.sin((u - v) * 7 + 0.9) * 0.15;
+        + Math.sin((u + v) * 5 + 2.3) * 0.25 + Math.sin((u - v) * 7 + 0.9) * 0.15
+        + Math.sin(u * 11 + 0.4) * 0.12 + Math.sin(v * 13 + 2.9) * 0.10
+        + Math.sin((u * 2 - v * 3) * 4 + 1.1) * 0.08;
     }
   }
   for (let y = 0; y < S; y++) {
@@ -142,20 +233,109 @@ function createWater(scene) {
   const mesh = new THREE.Mesh(
     geo,
     new THREE.MeshPhongMaterial({
-      color: 0x175e7e, specular: 0xffd9a0, shininess: 130,
-      normalMap, normalScale: new THREE.Vector2(0.28, 0.28),
+      color: 0x145a74, specular: 0xffd9a0, shininess: 220,
+      normalMap, normalScale: new THREE.Vector2(0.45, 0.45),
       transparent: true, opacity: 0.96,
     }),
   );
   mesh.position.y = 0.2;
   scene.add(mesh);
+
+  // Elongated sun-glint streak on the northern sea, along the sun's
+  // azimuth: the glitter path a low golden-hour sun throws on water.
+  // A canvas gradient (warm, fading at both ends) on an additive plane,
+  // so the sea reads as lit water instead of a flat blue slab.
+  const glintTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 256, 0);
+    grad.addColorStop(0, 'rgba(255,215,140,0)');
+    grad.addColorStop(0.35, 'rgba(255,215,140,0.55)');
+    grad.addColorStop(0.6, 'rgba(255,225,170,0.75)');
+    grad.addColorStop(1, 'rgba(255,215,140,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 256, 64);
+    g.globalCompositeOperation = 'destination-in';
+    const vg = g.createLinearGradient(0, 0, 0, 64);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(0.5, 'rgba(0,0,0,1)');
+    vg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, 256, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const glintGeo = new THREE.PlaneGeometry(2600, 240);
+  glintGeo.rotateX(-Math.PI / 2);
+  const glint = new THREE.Mesh(
+    glintGeo,
+    new THREE.MeshBasicMaterial({
+      map: glintTex, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  glint.position.set(-900, 0.6, -1900);
+  glint.rotation.y = 2.26; // long axis along the WNW sun azimuth
+  scene.add(glint);
+
+  // Wake: a fading foam trail behind the aircraft when it flies low
+  // over the sea — the churn a real float run leaves, and the cue that
+  // the water is water. Hidden over land or above 30 m.
+  const wakeTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 256;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 256);
+    // Bright at the canvas bottom (v=0, the +z end after the bake) so
+    // the fresh foam sits closest to the aircraft and fades to the tail.
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.6, 'rgba(255,255,255,0.4)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.85)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 256);
+    g.globalCompositeOperation = 'destination-in';
+    const vg = g.createLinearGradient(0, 0, 64, 0);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(0.5, 'rgba(0,0,0,1)');
+    vg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = vg;
+    g.fillRect(0, 0, 64, 256);
+    return new THREE.CanvasTexture(c);
+  })();
+  const wakeGeo = new THREE.PlaneGeometry(16, 70);
+  wakeGeo.rotateX(-Math.PI / 2);
+  const wake = new THREE.Mesh(
+    wakeGeo,
+    new THREE.MeshBasicMaterial({
+      map: wakeTex, transparent: true, opacity: 0,
+      depthWrite: false,
+    }),
+  );
+  wake.position.y = 0.55;
+  wake.visible = false;
+  scene.add(wake);
+
   return {
     mesh,
+    wake,
     // The ripple drifts slowly so the sun glitter shimmers instead of
-    // sitting as one frozen highlight.
-    update(dt) {
+    // sitting as one frozen highlight. With a position + heading the
+    // wake trails behind the aircraft on low passes over the sea.
+    update(dt, pos, heading, airborne) {
       normalMap.offset.x += dt * 0.004;
       normalMap.offset.y += dt * 0.0025;
+      if (!pos || !airborne) { wake.visible = false; return; }
+      const overSea = terrainHeightAt(pos.x, pos.z) < 1;
+      const alt = pos.y - 0.2;
+      if (!overSea || alt > 30) { wake.visible = false; return; }
+      // Forward is (sin(heading), 0, cos(heading)) negated: heading 0
+      // flies north (-z), so forward = (-sin h, 0, -cos h).
+      const fx = -Math.sin(heading);
+      const fz = -Math.cos(heading);
+      wake.position.set(pos.x - fx * 38, 0.55, pos.z - fz * 38);
+      wake.rotation.y = Math.atan2(fx, fz);
+      wake.material.opacity = 0.55 * (1 - alt / 30);
+      wake.visible = true;
     },
   };
 }
@@ -294,20 +474,24 @@ function createTownAndTrees(scene, rng) {
     m4.setPosition(x, y, z);
     return m4;
   }
-  // (a) Tropical rain tree: straight trunk + 4 overlapping crown blobs.
+  // (a) Tropical rain tree: straight trunk + 5 overlapping crown blobs
+  // (REALISM ROUND 2: a fifth, smaller top blob breaks the single-blob
+  // silhouette — the crown reads as layered foliage, not one ball).
   const rainGeo = mergeColoredParts([
     { geo: new THREE.CylinderGeometry(0.28, 0.5, 3.4, 6), matrix: xform(0, 1.7, 0, 1, 1, 1), color: 0x6b4a2f, shade: false },
     { geo: new THREE.IcosahedronGeometry(2.6, 1), matrix: xform(0, 4.4, 0, 1, 0.85, 1), color: 0x2f5c28 },
     { geo: new THREE.IcosahedronGeometry(2.1, 1), matrix: xform(0.9, 5.6, 0.4, 1, 0.85, 1), color: 0x3a6b32 },
     { geo: new THREE.IcosahedronGeometry(1.9, 1), matrix: xform(-0.8, 5.8, -0.5, 1, 0.85, 1), color: 0x2a5224 },
     { geo: new THREE.IcosahedronGeometry(1.5, 1), matrix: xform(0, 7.0, 0, 1, 0.9, 1), color: 0x4a7a3c },
+    { geo: new THREE.IcosahedronGeometry(1.0, 1), matrix: xform(0.4, 8.2, 0.3, 1, 0.9, 1), color: 0x55883f },
   ]);
-  // (b) Mountain pine: trunk + 3 stacked shrinking blobs (layered, not one cone).
+  // (b) Mountain pine: trunk + 4 stacked shrinking blobs (layered, not one cone).
   const pineGeo = mergeColoredParts([
     { geo: new THREE.CylinderGeometry(0.22, 0.4, 2.6, 6), matrix: xform(0, 1.3, 0, 1, 1, 1), color: 0x5a3d26, shade: false },
     { geo: new THREE.IcosahedronGeometry(2.0, 1), matrix: xform(0, 3.6, 0, 1, 0.9, 1), color: 0x24401e },
     { geo: new THREE.IcosahedronGeometry(1.5, 1), matrix: xform(0, 5.2, 0, 1, 0.9, 1), color: 0x2c4d24 },
     { geo: new THREE.IcosahedronGeometry(1.0, 1), matrix: xform(0, 6.5, 0, 1, 0.95, 1), color: 0x35602c },
+    { geo: new THREE.IcosahedronGeometry(0.65, 1), matrix: xform(0, 7.5, 0, 1, 0.95, 1), color: 0x3d6c33 },
   ]);
   // (c) Tropical palm: leaning trunk + 7 drooping fronds.
   const palmParts = [
@@ -362,17 +546,39 @@ function createTownAndTrees(scene, rng) {
     return h >= 4 && h <= 75 && p >= 0.28 && p <= 0.45
       && !(Math.abs(x) < 160 && Math.abs(z) < 560);
   };
-  plantTrees(rainGeo, 460, forestFilter, 0.9, 2.0, -2600, 2600, -2600, 2600);
-  plantTrees(pineGeo, 260, (x, z, h) => {
+  plantTrees(rainGeo, 520, forestFilter, 1.15, 2.5, -2600, 2600, -2600, 2600);
+  plantTrees(pineGeo, 300, (x, z, h) => {
     const dv = Math.sqrt((x - VOLCANO.x) ** 2 + (z - VOLCANO.z) ** 2);
     return h >= 60 && h <= 260 && dv < 900 && !(Math.abs(x) < 160 && Math.abs(z) < 560);
-  }, 0.8, 1.7, -2450, -1050, -2050, -650);
+  }, 1.0, 2.0, -2450, -1050, -2050, -650);
   plantTrees(palmGeo, 90, (x, z, h) => {
     const dr = Math.abs(x - riverX(z));
     const r = Math.sqrt(x * x + z * z);
     return h >= 1 && h <= 6 && (r > 2100 || dr < 130)
       && !(Math.abs(x) < 160 && Math.abs(z) < 560);
   }, 0.8, 1.5, -2600, 2600, -2600, 2600);
+
+  // (d) Undergrowth shrubs (REALISM ROUND 2): two-blob bushes that fill
+  // the bare ground between the trees — the forest floor reads as
+  // vegetation instead of flat green at low altitude.
+  const shrubGeo = mergeColoredParts([
+    { geo: new THREE.IcosahedronGeometry(1.4, 1), matrix: xform(0, 0.9, 0, 1, 0.7, 1), color: 0x2f5c28 },
+    { geo: new THREE.IcosahedronGeometry(1.0, 1), matrix: xform(0.8, 1.2, 0.3, 1, 0.7, 1), color: 0x3a6b32 },
+  ]);
+  plantTrees(shrubGeo, 380, (x, z, h) => {
+    const p = fbm2(x * 0.0016 + 7.3, z * 0.0016 - 2.1, WORLD_SEED, 3);
+    return h >= 2 && h <= 45 && p >= 0.28 && p <= 0.62
+      && !(Math.abs(x) < 160 && Math.abs(z) < 560);
+  }, 0.9, 2.2, -2600, 2600, -2600, 2600);
+
+  // (e) Approach-flank trees (REALISM ROUND 2): rain trees lining both
+  // sides of the runway 36 final (x 170-320, z 200-600) — just outside
+  // the airfield exclusion, so the cockpit shot's final frames the
+  // runway with real trees instead of empty grass.
+  plantTrees(rainGeo, 40, (x, z, h) => {
+    const ax = Math.abs(x);
+    return ax >= 170 && ax <= 320 && z >= 200 && z <= 600 && h >= 2;
+  }, 1.3, 2.4, -320, 320, 200, 600);
 }
 
 // Runway 36 texture: asphalt, centreline dashes, threshold bars, "36".
@@ -415,6 +621,24 @@ function makeRunwayTexture() {
 }
 
 // The airfield: runway, taxiway, windsock, terminal, hangars, edge lights.
+// The taxiway wears the Poly Haven aerial-asphalt texture (CC0, applied
+// by assets.js once it loads — loadGameAssets resolves only after the
+// texture is in, so staged shots never catch the flat grey).
+let _taxiwayMesh = null;
+let _taxiwayTexPending = null;
+function applyTaxiwayTexture(tex) {
+  if (!tex) return;
+  if (_taxiwayMesh) {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 10); // ~32 m per tile along the 320 m taxiway
+    tex.anisotropy = 4;
+    _taxiwayMesh.material.map = tex;
+    _taxiwayMesh.material.needsUpdate = true;
+  } else {
+    _taxiwayTexPending = tex;
+  }
+}
+
 function createAirfield(scene) {
   const group = new THREE.Group();
   const y = 2.3;
@@ -434,6 +658,8 @@ function createAirfield(scene) {
   taxi.rotation.x = -Math.PI / 2;
   taxi.position.set(60, y + 0.05, 120);
   group.add(taxi);
+  _taxiwayMesh = taxi;
+  if (_taxiwayTexPending) applyTaxiwayTexture(_taxiwayTexPending);
 
   // Windsock: striped cone on a pole, pointing with the wind.
   const pole = new THREE.Mesh(

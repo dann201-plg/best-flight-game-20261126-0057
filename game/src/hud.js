@@ -32,7 +32,8 @@ function createHud() {
 
   const score = panel('hud-score', 'hud-bottomleft');
   score.innerHTML = '<div class="hud-label">SCORE <span id="hud-score-v">0</span></div>'
-    + '<div class="hud-sub">RINGS <span id="hud-rings">0/5</span> · LEG <span id="hud-leg">1/3</span></div>'
+    + '<div class="hud-sub">MISI <span id="hud-mission">POS MERPATI</span></div>'
+    + '<div class="hud-sub">RINGS <span id="hud-rings">0/5</span> · <span id="hud-leg">1/6</span></div>'
     + '<div class="hud-sub">FUEL <span id="hud-fuel-v">100%</span></div>'
     + '<div class="fuelbar"><div id="hud-fuel-bar"></div></div>';
 
@@ -77,8 +78,8 @@ function createHud() {
     + '<div class="ov-kicker">MAKE.FUN · BEST FLIGHT GAME</div>'
     + '<h1>LANGIT<br>NUSANTARA</h1>'
     + '<div class="ov-sub">Merpati Nusantara · Kepulauan Indonesia · Golden Hour</div>'
-    + '<p class="ov-text">Fly the twin-prop island hopper through glowing rings over coast, volcano and town — then land her on runway 36. Watch your fuel: every leg ends on the runway.</p>'
-    + '<div class="ov-controls">↑ ↓ pitch (hold ↑ to loop) &nbsp;·&nbsp; ← → bank (hold to roll 360°) &nbsp;·&nbsp; W / S throttle &nbsp;·&nbsp; A / D rudder &nbsp;·&nbsp; SPACE brake &nbsp;·&nbsp; P pause &nbsp;·&nbsp; mouse: hold + drag to steer</div>'
+    + '<p class="ov-text">Fly the twin-prop island hopper through glowing rings over coast, volcano and town — six named sorties, then land her on runway 36 and earn your grade. Watch your fuel: every sortie ends on the runway.</p>'
+    + '<div class="ov-controls">↑ ↓ pitch (hold ↑ to loop) &nbsp;·&nbsp; ← → bank (hold to roll 360°) &nbsp;·&nbsp; W / S throttle &nbsp;·&nbsp; A / D rudder &nbsp;·&nbsp; SPACE brake &nbsp;·&nbsp; C cockpit / chase &nbsp;·&nbsp; P pause &nbsp;·&nbsp; mouse: hold + drag to steer</div>'
     + '<button id="hud-start" class="ov-button">TERBANG ▸</button>'
     + '<div class="ov-foot">Three.js · offline · keyboard + mouse</div>'
     + '</div>';
@@ -270,10 +271,15 @@ function createHud() {
       titleOv.style.display = which === 'title' ? 'flex' : 'none';
       briefOv.style.display = which === 'brief' ? 'flex' : 'none';
       endOv.style.display = which === 'end' ? 'flex' : 'none';
+      // v2: dispatch and debrief are overlays of their own modules — the
+      // HUD overlays all hide, and the in-flight panels show only while
+      // actually flying. menu-mode hides the chase panels behind the
+      // dispatch board and the debrief so the boards read clean.
       root.classList.toggle('in-flight', which === 'flight');
+      root.classList.toggle('menu-mode', which === 'dispatch' || which === 'debrief');
     },
     setBrief(leg, title, text, route) {
-      document.getElementById('hud-brief-kicker').textContent = 'LEG ' + leg + ' / 3';
+      document.getElementById('hud-brief-kicker').textContent = 'MISI ' + leg + ' / 6';
       document.getElementById('hud-brief-title').textContent = title;
       document.getElementById('hud-brief-text').textContent = text;
       document.getElementById('hud-brief-route').textContent = route;
@@ -295,8 +301,9 @@ function createHud() {
       const hdg = Math.round(headingDegrees(st));
       document.getElementById('hud-hdg').textContent = 'HDG ' + String(hdg).padStart(3, '0') + '°';
       document.getElementById('hud-score-v').textContent = String(st.score);
+      document.getElementById('hud-mission').textContent = st.missionName || MISSIONS[st.leg - 1].name;
       document.getElementById('hud-rings').textContent = st.ringsPassed + '/' + st.ringsTotal;
-      document.getElementById('hud-leg').textContent = st.leg + '/3';
+      document.getElementById('hud-leg').textContent = 'MISI ' + st.leg + '/6';
       document.getElementById('hud-fuel-v').textContent = Math.round(st.fuel) + '%';
       document.getElementById('hud-fuel-bar').style.width = st.fuel + '%';
       document.getElementById('hud-fuel-bar').style.background = st.fuel < 25 ? '#ff5a4e' : '#8ef5c0';
