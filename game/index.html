@@ -66,6 +66,71 @@
     padding: 14px 36px; cursor: pointer; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
   .ov-button:hover { background: #a8ffce; }
   .ov-foot { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 20px; }
+  /* v2: cockpit panel (bottom glareshield bar, shown only in cockpit mode).
+     Warm wood-and-brass instruments — dark walnut panel, brass-rimmed
+     gauges, amber numerals — so the strip reads as a flown cockpit,
+     not a flat black HUD bar. */
+  #cockpit-panel { position: absolute; left: 0; right: 0; bottom: 0; display: flex;
+    justify-content: center; gap: 12px; padding: 10px 16px 12px;
+    background: linear-gradient(rgba(46,33,19,0.96), rgba(23,16,10,0.98));
+    border-top: 3px solid rgba(176,141,62,0.85);
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.45); pointer-events: none; }
+  .ck-gauge { text-align: center; color: #ffd76a; background: rgba(26,18,10,0.75);
+    border: 2px solid #b08d3e; border-radius: 8px; padding: 8px 12px 7px;
+    box-shadow: inset 0 0 14px rgba(0,0,0,0.6), 0 0 8px rgba(255,183,71,0.25); min-width: 86px; }
+  .ck-gauge .hud-big { font-size: 34px; color: #ffe9b8; }
+  .ck-gauge .hud-label { font-size: 11px; color: #e8b64c; }
+  .ck-gauge .hud-unit { color: rgba(255,183,71,0.75); }
+  .ck-gauge .hud-sub { color: #f0d9a0; }
+  #cockpit-panel .thrbar { height: 84px; }
+  #cockpit-compass { position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(26,18,8,0.6); border: 1px solid rgba(176,141,62,0.6);
+    border-radius: 6px; padding: 6px 10px; text-align: center; pointer-events: none; }
+  .ck-fuelbar { width: 110px; height: 10px; background: rgba(255,255,255,0.15);
+    border-radius: 5px; margin: 8px auto 2px; overflow: hidden; }
+  #ck-fuel-bar { height: 100%; background: #ffb347; width: 100%; }
+  .ck-gear-dots { display: flex; justify-content: center; gap: 10px; margin: 12px 0 8px; }
+  .ck-gear-dots span { width: 15px; height: 15px; border-radius: 50%;
+    background: rgba(255,90,78,0.3); border: 1px solid rgba(255,255,255,0.25); }
+  .ck-gear-dots span.on { background: #8ef5c0;
+    box-shadow: 0 0 10px rgba(142,245,192,0.9); border-color: #8ef5c0; }
+  .ck-gear-dots span.off { background: rgba(255,215,106,0.75);
+    box-shadow: 0 0 8px rgba(255,215,106,0.6); border-color: #ffd76a; }
+  #hud.cockpit-mode .panel { display: none; }
+  /* v2: dispatch board + debrief. */
+  .dispatch-inner { max-width: 1080px; text-align: left; }
+  .dispatch-body { display: flex; gap: 24px; margin-top: 18px; }
+  .dispatch-list { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .mission-row { display: flex; gap: 12px; align-items: center; padding: 10px 12px;
+    background: rgba(4,20,28,0.6); border: 1px solid rgba(142,245,192,0.35);
+    border-radius: 8px; cursor: pointer; pointer-events: auto; }
+  .mission-row:hover { border-color: #8ef5c0; background: rgba(4,20,28,0.85); }
+  .mission-num { font-size: 26px; font-weight: 800; color: #ffd76a; width: 30px; text-align: center; }
+  .mission-main { flex: 1; }
+  .mission-name { font-size: 17px; font-weight: 700; letter-spacing: 1px; color: #eafff3; }
+  .mission-goal { font-size: 13px; color: #d5e8f0; margin-top: 2px; }
+  .mission-meta { font-size: 12px; color: #9fc4d8; margin-top: 2px; }
+  .mission-medal { font-size: 13px; font-weight: 700; letter-spacing: 1px; color: #ffd76a; }
+  .mission-row.done .mission-medal { color: #8ef5c0; }
+  .dispatch-map { text-align: center; }
+  .dispatch-map canvas { border: 2px solid #b08d3e; border-radius: 4px; background: #e9dec2; }
+  .dispatch-map-cap { font-size: 11px; letter-spacing: 2px; color: #d8c08d; margin-top: 6px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+  .debrief-inner { max-width: 980px; }
+  .debrief-body { display: flex; gap: 24px; margin-top: 16px; align-items: flex-start; }
+  .debrief-grade { text-align: center; min-width: 150px; }
+  #debrief-grade { font-size: 110px; font-weight: 800; line-height: 1; color: #ffd76a;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.55); }
+  .debrief-grade-cap { font-size: 13px; letter-spacing: 2px; color: #8ef5c0; margin-top: 6px; }
+  .debrief-right { flex: 1; }
+  #debrief-trace { border: 1px solid rgba(142,245,192,0.35); border-radius: 8px; width: 100%; }
+  .debrief-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin-top: 12px; }
+  .debrief-metrics div { display: flex; justify-content: space-between; font-size: 14px; color: #d5e8f0;
+    border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 4px; }
+  .debrief-metrics span { letter-spacing: 1px; color: #9fc4d8; font-size: 12px; }
+  .debrief-metrics b { color: #eafff3; }
+  .ov-button-ghost { background: transparent; color: #8ef5c0; border: 2px solid #8ef5c0; box-shadow: none; }
+  #hud.menu-mode .panel { display: none; }
 </style>
 </head>
 <body>
@@ -74,9 +139,15 @@
 <script src="vendor/three.min.js"></script>
 <script src="src/rng.js"></script>
 <script src="src/sky.js"></script>
+<script src="src/assets.js"></script>
 <script src="src/terrain.js"></script>
 <script src="src/aircraft.js"></script>
 <script src="src/flight.js"></script>
+<script src="src/missions.js"></script>
+<script src="src/cockpit.js"></script>
+<script src="src/interior.js"></script>
+<script src="src/dispatch.js"></script>
+<script src="src/debrief.js"></script>
 <script src="src/hud.js"></script>
 <script src="src/sound.js"></script>
 <script src="src/game.js"></script>
